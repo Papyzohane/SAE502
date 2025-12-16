@@ -1,0 +1,173 @@
+---
+# Installation Apache/PHP
+
+- name: Mettre à jour le cache APT
+  ansible.builtin.apt:
+    update_cache: yes
+
+- name: Installer Apache, PHP et extensions GLPI
+  ansible.builtin.apt:
+    name:
+      - apache2
+      - php
+      - php-apcu
+      - php-cli
+      - php-common
+      - php-curl
+      - php-gd
+      - php-imap
+      - php-ldap
+      - php-mysql
+      - php-xmlrpc
+      - php-xml
+      - php-mbstring
+      - php-bcmath
+      - php-intl
+      - php-zip
+      - php-redis
+      - php-bz2
+      - libapache2-mod-php
+      - php-soap
+      - php-cas
+    state: present
+
+- name: S'assurer qu'Apache est démarré (apachectl)
+  ansible.builtin.command: apachectl start
+  changed_when: false
+
+# Téléchargement et déploiement GLPI
+
+- name: Créer le répertoire /var/www/html s'il n'existe pas
+  ansible.builtin.file:
+    path: /var/www/html
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Télécharger l’archive GLPI
+  ansible.builtin.get_url:
+    url: "https://github.com/glpi-project/glpi/releases/download/11.0.0/glpi-11.0.0.tgz"
+    dest: "/var/www/html/glpi-11.0.0.tgz"
+    mode: '0644'
+
+- name: Extraire l’archive GLPI
+  ansible.builtin.unarchive:
+    src: "/var/www/html/glpi-11.0.0.tgz"
+    dest: /var/www/html/
+    remote_src: yes
+    creates: /var/www/html/glpi
+
+# FHS : préparation des dossiers
+
+- name: Créer les répertoires FHS GLPI
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: "{{ item.mode | default('0755') }}"
+  loop:
+    - { path: '/etc/glpi' }
+    - { path: '/var/lib/glpi' }
+    - { path: '/var/log/glpi', mode: '0755' }
+
+- name: Créer downstream.php pour pointer vers /etc/glpi
+  ansible.builtin.copy:
+    dest: /var/www/html/glpi/inc/downstream.php
+    owner: www-data
+    group: www-data
+    mode: '0644'
+    content: |
+      <?php
+      define('GLPI_CONFIG_DIR', '/etc/glpi/');
+      if (file_exists(GLPI_CONFIG_DIR . '/local_define.php')) {
+          require_once GLPI_CONFIG_DIR . '/local_define.php';
+      }
+
+- name: Déplacer config et files vers FHS
+  ansible.builtin.command: "{{ item.cmd }}"
+  args:
+    creates: "{{ item.creates }}"
+  loop:
+    - { cmd: 'mv /var/www/html/glpi/config /etc/glpi',   creates: '/etc/glpi/config' }
+    - { cmd: 'mv /var/www/html/glpi/files  /var/lib/glpi', creates: '/var/lib/glpi/files' }
+
+- name: Créer local_define.php pour les chemins GLPI
+  ansible.builtin.copy:
+    dest: /etc/glpi/local_define.php
+    owner: www-data
+    group: www-data
+    mode: '0644'
+    content: |
+      <?php
+      define('GLPI_VAR_DIR', '/var/lib/glpi');
+      define('GLPI_DOC_DIR', GLPI_VAR_DIR);
+      define('GLPI_CACHE_DIR', GLPI_VAR_DIR . '/_cache');
+      define('GLPI_CRON_DIR', GLPI_VAR_DIR . '/_cron');
+      define('GLPI_GRAPH_DIR', GLPI_VAR_DIR . '/_graphs');
+      define('GLPI_LOCAL_I18N_DIR', GLPI_VAR_DIR . '/_locales');
+      define('GLPI_LOCK_DIR', GLPI_VAR_DIR . '/_lock');
+      define('GLPI_PICTURE_DIR', GLPI_VAR_DIR . '/_pictures');
+      define('GLPI_PLUGIN_DOC_DIR', GLPI_VAR_DIR . '/_plugins');
+      define('GLPI_RSS_DIR', GLPI_VAR_DIR . '/_rss');
+      define('GLPI_SESSION_DIR', GLPI_VAR_DIR . '/_sessions');
+      define('GLPI_TMP_DIR', GLPI_VAR_DIR . '/_tmp');
+      define('GLPI_UPLOAD_DIR', GLPI_VAR_DIR . '/_uploads');
+      define('GLPI_INVENTORY_DIR', GLPI_VAR_DIR . '/_inventories');
+      define('GLPI_THEMES_DIR', GLPI_VAR_DIR . '/_themes');
+      define('GLPI_LOG_DIR', '/var/log/glpi');
+
+# Permissions
+
+- name: Appliquer les propriétaires recommandés
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    recurse: yes
+  loop:
+    - { path: '/var/www/html/glpi', owner: 'root',     group: 'root' }
+    - { path: '/etc/glpi',         owner: 'www-data', group: 'www-data' }
+    - { path: '/var/lib/glpi',     owner: 'www-data', group: 'www-data' }
+    - { path: '/var/log/glpi',     owner: 'www-data', group: 'www-data' }
+
+- name: Droits fichiers GLPI
+  ansible.builtin.shell: "find {{ item }} -type f -exec chmod 0644 {} \\;"
+  loop:
+    - /var/www/html/glpi
+    - /etc/glpi
+    - /var/lib/glpi
+    - /var/log/glpi
+
+- name: Droits dossiers GLPI
+  ansible.builtin.shell: "find {{ item }} -type d -exec chmod 0755 {} \\;"
+  loop:
+    - /var/www/html/glpi
+    - /etc/glpi
+    - /var/lib/glpi
+    - /var/log/glpi
+
+# VirtualHost Apache pour GLPI
+
+- name: Déployer le VirtualHost GLPI
+  ansible.builtin.template:
+    src: glpi.conf.j2
+    dest: /etc/apache2/sites-available/glpi.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart apache
+
+- name: Désactiver le site par défaut Apache
+  ansible.builtin.shell: a2dissite 000-default.conf
+  notify: restart apache
+
+- name: Activer le module rewrite
+  ansible.builtin.shell: a2enmod rewrite
+  notify: restart apache
+
+- name: Activer le site GLPI
+  ansible.builtin.shell: a2ensite glpi.conf
+  notify: restart apache
+

@@ -1,0 +1,20 @@
+<VirtualHost *:80>
+    ServerName {{ glpi_server_name }}
+
+    DocumentRoot /var/www/html/glpi/public
+
+    <Directory /var/www/html/glpi/public>
+        Require all granted
+        AllowOverride All
+
+        RewriteEngine On
+
+        # Préserver les en-têtes d'authentification pour API, CalDAV, etc.
+        RewriteCond %{HTTP:Authorization} ^(.+)$
+        RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP_AUTHORIZATION}]
+
+        # Rediriger toutes les requêtes vers index.php sauf si le fichier existe
+        RewriteCond %{REQUEST_FILENAME} !-f
+        RewriteRule ^(.*)$ index.php [QSA,L]
+    </Directory>
+</VirtualHost>

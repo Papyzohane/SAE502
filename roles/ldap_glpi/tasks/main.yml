@@ -1,0 +1,65 @@
+---
+- name: Vérifier installation GLPI
+  ansible.builtin.stat:
+    path: /var/www/html/glpi/public/index.php
+  register: glpi_installed
+
+- name: Supprimer anciennes configs LDAP
+  community.mysql.mysql_query:
+    login_host: "{{ glpi_db_host }}"
+    login_user: glpi
+    login_password: "{{ glpi_db_password }}"
+    login_db: glpi
+    query: "DELETE FROM glpi_authldaps;"
+  when: glpi_installed.stat.exists
+
+- name: Insérer config LDAP fonctionnelle
+  community.mysql.mysql_query:
+    login_host: "{{ glpi_db_host }}"
+    login_user: glpi
+    login_password: "{{ glpi_db_password }}"
+    login_db: glpi
+    query: |
+      INSERT INTO glpi_authldaps (
+        name,
+        host,
+        port,
+        basedn,
+        rootdn,
+        rootdn_passwd,
+        login_field,
+        sync_field,
+        group_field,
+        group_condition,
+        title_field,
+        date_mod,
+        `condition`,
+        use_tls
+      ) VALUES (
+        '{{ ldap_name }}',
+        '{{ ldap_server }}',
+        {{ ldap_port }},
+        '{{ ldap_basedn }}',
+        '{{ ldap_rootdn }}',
+        '{{ ldap_rootpass }}',
+        '{{ ldap_login_field }}',
+        '{{ ldap_sync_field }}',
+        NULL,
+        '',
+        NULL,
+        NOW(),
+        '{{ ldap_filter }}',
+        0
+      );
+  when: glpi_installed.stat.exists
+
+- name: Vider cache GLPI
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    recurse: yes
+  loop:
+    - /var/lib/glpi/_cache
+    - /var/lib/glpi/_sessions
+  when: glpi_installed.stat.exists
+

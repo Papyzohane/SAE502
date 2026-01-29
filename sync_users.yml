@@ -1,0 +1,15 @@
+---
+- name: Sync utilisateurs LDAP
+  hosts: apache
+  become: yes
+  tasks:
+    - name: Lancer synchronisation AD
+      ansible.builtin.shell: |
+        cd /var/www/html/glpi && \
+        sudo -u www-data php bin/console glpi:ldap:synchronize_users \
+          --no-interaction \
+          -s 2
+
+    - name: Vider cache
+      ansible.builtin.shell: sudo -u www-data rm -rf /var/lib/glpi/_cache/*
+

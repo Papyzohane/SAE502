@@ -1,0 +1,24 @@
+---
+- name: Synchroniser GLPI à LDAP
+  hosts: apache
+  become: yes
+
+  vars:
+    glpi_db_host: "mariadb_glpi"
+    glpi_db_password: "RootPass123!"
+
+    ldap_name: "ldap.glpi.local"
+    ldap_server: "192.168.1.141"
+    ldap_port: 389
+
+    ldap_basedn: "OU=Dem Dikk,DC=glpi,DC=local"
+    ldap_rootdn: "Administrateur@glpi.local"
+    ldap_rootpass: "R00t"
+
+    ldap_login_field: "samaccountname"
+    ldap_sync_field: "objectguid"
+
+    ldap_filter: "(&(objectClass=user)(objectCategory=person)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))"
+
+  roles:
+    - ldap_glpi
